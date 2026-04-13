@@ -155,20 +155,35 @@ final class VoxEngine: ObservableObject {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: whisperCli)
 
-            // Initial prompt: dramatically improves PT-PT accuracy
-            // Tells Whisper the expected language style, reduces hallucinations,
-            // and helps with custom vocabulary (names, technical terms)
-            var args = ["-m", modelPath, "-f", tempWav, "-l", currentLang, "-t", "6", "--no-timestamps", "--no-prints"]
+            // Language strategy:
+            // - "auto" is bad for mixed PT+EN (picks one and ignores the other)
+            // - "pt" forces Portuguese but Whisper still transcribes English words correctly
+            //   when the initial prompt tells it to expect code-switching
+            // - This is the best approach for bilingual PT-PT + EN users
+            let effectiveLang = (currentLang == "auto") ? "pt" : currentLang
 
-            // Build initial prompt for PT-PT context
-            var promptParts = [
-                "Transcrição em Português Europeu.",
-                "Pontuação correcta com acentos: ã, õ, ç, é, ê, á, ó, ú."
-            ]
+            var args = ["-m", modelPath, "-f", tempWav, "-l", effectiveLang, "-t", "6", "--no-timestamps", "--no-prints"]
+
+            // Initial prompt: critical for mixed-language accuracy
+            var promptParts: [String] = []
+            if effectiveLang == "pt" {
+                promptParts = [
+                    "Transcrição em Português Europeu com termos em Inglês.",
+                    "O utilizador alterna entre Português e Inglês naturalmente.",
+                    "Preserva palavras em Inglês: deploy, meeting, feedback, sprint, feature, bug.",
+                    "Pontuação correcta com acentos: ã, õ, ç, é, ê, á, ó, ú."
+                ]
+            } else if effectiveLang == "en" {
+                promptParts = [
+                    "Transcription in English with proper punctuation and capitalization."
+                ]
+            }
             if !currentCustomVocab.isEmpty {
                 promptParts.append("Vocabulário: \(currentCustomVocab)")
             }
-            args += ["--prompt", promptParts.joined(separator: " ")]
+            if !promptParts.isEmpty {
+                args += ["--prompt", promptParts.joined(separator: " ")]
+            }
             proc.arguments = args
             let pipe = Pipe()
             proc.standardOutput = pipe
