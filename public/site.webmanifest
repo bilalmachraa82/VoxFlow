@@ -4,6 +4,6 @@
   "description": "Ditado PT-PT para macOS com bring your own key.",
   "start_url": "/",
   "display": "browser",
-  "background_color": "#f7f8f6",
-  "theme_color": "#101418"
+  "background_color": "#f5f5f7",
+  "theme_color": "#000000"
 }
