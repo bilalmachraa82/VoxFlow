@@ -12,6 +12,11 @@ let package = Package(
             name: "VoxFlow",
             dependencies: ["HotKey"],
             path: "Sources/VoxFlow"
+        ),
+        .testTarget(
+            name: "VoxFlowTests",
+            dependencies: ["VoxFlow"],
+            path: "Tests/VoxFlowTests"
         )
     ]
 )

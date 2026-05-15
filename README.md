@@ -1,79 +1,120 @@
 # VoxFlow
 
-**Speech-to-text local para Português Europeu (PT-PT) e English.**  
-100% grátis. 100% privado. macOS 14+ / Apple Silicon.
+Menu bar app para ditado e transcricao em Portugues Europeu (PT-PT) no macOS.
 
-## Features
+## Setup recomendado
 
-- **Whisper large-v3-turbo** para EN (~3-4% WER)
-- **inesc-id fine-tuned** para PT-PT (~12.5% WER — melhor modelo grátis)
-- **Groq Llama 3.3 70B** para polish (300+ tok/s, 14,400 req/dia grátis)
-- **Auto-paste** no cursor com clipboard restore
-- **Power Mode** — adapta tom por app (Email=formal, Slack=casual, Code=técnico)
-- **Menu bar app** nativa SwiftUI
-- **Hotkey ⌥+Space** global
-- **Waveform animada** durante gravação
-- **Histórico pesquisável** com estatísticas
-- **Onboarding wizard** na primeira utilização
-- **Hold-to-talk** mode
-- **0 MB RAM idle** — modelo carrega on-demand
-- **Sons de feedback** (início/fim/erro)
-- **Auto-detect microfone** (filtra virtuais Zoom/Teams)
+- **Transcricao final:** OpenAI `gpt-4o-transcribe`
+- **Preview live:** OpenAI `gpt-realtime-whisper`
+- **Polish PT-PT:** OpenAI `gpt-5.5`
+- **Fallback local/offline:** `whisper.cpp` com `large-v3-turbo`
+- **Aprendizagem:** glossario local + correccoes guardadas, usadas nos prompts seguintes
 
-## Instalação
+Este setup privilegia qualidade PT-PT. Para poupar custo, usa `gpt-4o-mini-transcribe` e `gpt-5.4-mini`, ou desactiva o polish.
 
-### Requisitos
-- macOS 14+ (Sonoma/Tahoe)
-- Apple Silicon (M1+)
-- Xcode 15+ (para compilar)
-- `brew install whisper-cpp ffmpeg`
+## Funcionalidades
 
-### Build
+- Captura nativa de audio no macOS
+- Hotkey global `Option + Space`
+- Transcricao OpenAI ou local
+- Preview live opcional durante a gravacao
+- Fallback local visivel se a API falhar
+- Vocabulario personalizado para nomes, marcas e termos tecnicos
+- Memoria local de correccoes
+- Polish por contexto da app activa
+- Auto-paste no cursor
+- Historico pesquisavel e estimativa de custo
+- API keys guardadas no Keychain
+
+## Requisitos
+
+- macOS 14+
+- Apple Silicon recomendado
+- Xcode 15+ para compilar
+- Para fallback local: `brew install whisper-cpp`
+
+O fallback local procura modelos em:
+
+```text
+~/Library/Application Support/VoxFlow/Models/
+```
+
+Exemplo:
+
+```text
+~/Library/Application Support/VoxFlow/Models/ggml-large-v3-turbo.bin
+```
+
+## Build
+
 ```bash
-git clone https://github.com/SEU_USER/VoxFlow.git
-cd VoxFlow
+swift build
+swift test
+```
+
+No Codex, usa a acao **Run**. Em terminal:
+
+```bash
+./script/build_and_run.sh
+./script/build_and_run.sh --verify
+```
+
+## Configuracao na app
+
+1. Abre `Definicoes > Modelo`.
+2. Escolhe `OpenAI - melhor qualidade PT-PT`.
+3. Cola a OpenAI API key.
+4. Usa `gpt-4o-transcribe` para melhor qualidade.
+5. Mantem `Preview live com gpt-realtime-whisper` activo se quiseres texto durante a fala.
+6. Em `Definicoes > Polish`, escolhe `OpenAI - gpt-5.5`.
+7. Adiciona nomes e termos em `Vocabulario personalizado`.
+8. Depois de cada transcricao, corrige o texto e carrega em `Guardar correcao`.
+
+## Publicacao da landing
+
+Este repo inclui uma landing estatica em `public/` para Vercel. E intencionalmente
+**bring your own key**:
+
+- o site nao tem backend;
+- nenhuma API key fica no Vercel;
+- cada utilizador cola a sua key dentro da app macOS;
+- a app guarda a key no Keychain local.
+
+Deploy recomendado:
+
+```bash
+vercel link
+vercel --prod
+vercel domains add aitipro.com
+```
+
+O `vercel.json` serve apenas `public/`, por isso o deploy web nao publica os
+ficheiros Swift como assets do site.
+
+## Custos
+
+Regra pratica para qualidade maxima:
+
+```text
+gpt-4o-transcribe + gpt-5.5 ~= $0.02/min
+```
+
+Com preview realtime activo, a estimativa sobe. Define sempre um limite mensal na dashboard da OpenAI.
+
+## Privacidade
+
+- Modo local: audio e texto ficam no Mac.
+- Modo OpenAI: audio/texto sao enviados para a OpenAI para transcricao/polish.
+- API keys sao guardadas no Keychain do macOS.
+- Historico e correccoes ficam em `~/.voxflow/`.
+
+## Verificacao
+
+```bash
+swift test
 swift build
 ```
 
-### Instalar
-```bash
-# Criar .app bundle
-mkdir -p /Applications/VoxFlow.app/Contents/MacOS
-cp .build/debug/VoxFlow /Applications/VoxFlow.app/Contents/MacOS/
-cp Info.plist /Applications/VoxFlow.app/Contents/
-codesign --force --sign - /Applications/VoxFlow.app/Contents/MacOS/VoxFlow
-open /Applications/VoxFlow.app
-```
-
-### Modelos (download automático na primeira utilização)
-- `ggml-small.bin` (465 MB) — básico
-- `ggml-large-v3-turbo.bin` (1.6 GB) — recomendado
-- `inesc-id/WhisperLv3-X-PT-All` (2.9 GB) — melhor PT-PT
-
-### CLI
-```bash
-vox 5             # grava 5s, transcreve, cola no cursor
-vox-ptpt 5        # PT-PT premium (modelo fine-tuned)
-vox --stream      # tempo real
-vox --settings    # definições
-vox --devices     # microfones
-```
-
-## Polish (grátis)
-
-1. Vai a [console.groq.com](https://console.groq.com)
-2. Cria conta grátis
-3. API Keys → Create
-4. Na app: Definições → Polish → cola a key
-
-## Benchmarks (M4 16GB)
-
-| Modelo | WER PT-PT | Velocidade | RAM pico |
-|--------|-----------|-----------|----------|
-| small | ~12% | 1.6s | 465 MB |
-| large-v3-turbo | ~8-10% | 2.6s | 1.6 GB |
-| inesc-id (PT-PT) | **12.5%** (fine-tuned) | 10-15s | 2.9 GB |
-
-## Licença
+## Licenca
 
 MIT

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VoxFlow - Ditado PT-PT para macOS</title>
+    <meta
+      name="description"
+      content="VoxFlow e uma app macOS para ditado e transcricao em Portugues europeu, com OpenAI bring your own key, memoria local de correccoes e fallback local."
+    >
+    <meta name="theme-color" content="#101418">
+    <meta property="og:title" content="VoxFlow - Ditado PT-PT para macOS">
+    <meta
+      property="og:description"
+      content="Transcricao PT-PT com gpt-4o-transcribe, polish contextual e API keys guardadas no Keychain do macOS."
+    >
+    <meta property="og:type" content="website">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="site-header" aria-label="Navegacao principal">
+      <a class="brand" href="#top" aria-label="VoxFlow">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" role="img">
+            <path d="M7 18.5V13c0-5 3.8-9 9-9s9 4 9 9v5.5c0 5-3.8 9.5-9 9.5s-9-4.5-9-9.5Z" />
+            <path d="M12 17.7v-4.8c0-2.2 1.7-4 4-4s4 1.8 4 4v4.8c0 2.3-1.7 4.2-4 4.2s-4-1.9-4-4.2Z" />
+          </svg>
+        </span>
+        <span>VoxFlow</span>
+      </a>
+      <nav class="nav-links" aria-label="Seccoes">
+        <a href="#usar">Usar</a>
+        <a href="#modelos">Modelos</a>
+        <a href="#keys">BYOK</a>
+        <a href="https://github.com/bilalmachraa82/VoxFlow">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-media" aria-hidden="true"></div>
+        <div class="hero-shade" aria-hidden="true"></div>
+        <div class="hero-inner">
+          <div class="hero-copy">
+            <h1 id="hero-title">VoxFlow</h1>
+            <p>
+              Ditado macOS feito para Portugues europeu: fala, recebe uma transcricao limpa,
+              corrige uma vez e deixa a app reutilizar esse contexto nas proximas sessoes.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="https://github.com/bilalmachraa82/VoxFlow">Abrir no GitHub</a>
+              <a class="button secondary" href="#usar">Como usar</a>
+            </div>
+          </div>
+
+          <div class="transcript-panel" aria-label="Pre-visualizacao do produto">
+            <div class="panel-topline">
+              <span class="status-dot"></span>
+              <span>Option + Space</span>
+              <span>PT-PT</span>
+            </div>
+            <p>
+              "Envia o resumo ao Tiago, mas troca lead por oportunidade e mantem os nomes das empresas."
+            </p>
+            <div class="panel-result">
+              Envia o resumo ao Tiago, mas troca "lead" por "oportunidade" e mantem os nomes das empresas.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="intro-band" aria-labelledby="intro-title">
+        <div class="section-inner narrow">
+          <h2 id="intro-title">Qualidade primeiro, controlo sempre no teu Mac.</h2>
+          <p>
+            O setup recomendado usa OpenAI para transcricao e polish, mas as keys sao tuas.
+            A landing nao tem backend, nao recolhe audio e nao guarda credenciais.
+          </p>
+        </div>
+      </section>
+
+      <section id="usar" class="section light" aria-labelledby="usar-title">
+        <div class="section-inner">
+          <div class="section-heading">
+            <h2 id="usar-title">Como usar</h2>
+            <p>Fluxo curto para instalar, configurar e ditar em PT-PT.</p>
+          </div>
+          <ol class="steps">
+            <li>
+              <span class="step-number">01</span>
+              <div>
+                <h3>Compilar a app</h3>
+                <p>Clona o repo, instala Xcode 15+ e executa `swift build` ou o Run do Codex.</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">02</span>
+              <div>
+                <h3>Adicionar a tua key</h3>
+                <p>Na app, abre Definicoes, escolhe OpenAI e cola a tua API key. A key fica no Keychain.</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">03</span>
+              <div>
+                <h3>Ditar com Option + Space</h3>
+                <p>Mantem premido, fala naturalmente em Portugues de Portugal e larga para finalizar.</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">04</span>
+              <div>
+                <h3>Corrigir e ensinar</h3>
+                <p>Edita o resultado, guarda a correccao e adiciona termos no vocabulario personalizado.</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="modelos" class="section model-section" aria-labelledby="modelos-title">
+        <div class="section-inner">
+          <div class="section-heading">
+            <h2 id="modelos-title">Modelos recomendados</h2>
+            <p>O melhor equilibrio para uma app do genero WhisperFlow, mas afinada para PT-PT.</p>
+          </div>
+          <div class="model-table" role="table" aria-label="Modelos recomendados">
+            <div class="model-row header" role="row">
+              <span role="columnheader">Etapa</span>
+              <span role="columnheader">Modelo</span>
+              <span role="columnheader">Motivo</span>
+            </div>
+            <div class="model-row" role="row">
+              <span role="cell">Transcricao final</span>
+              <strong role="cell">gpt-4o-transcribe</strong>
+              <span role="cell">Maior qualidade para audio completo e prompts com glossario.</span>
+            </div>
+            <div class="model-row" role="row">
+              <span role="cell">Preview live</span>
+              <strong role="cell">gpt-realtime-whisper</strong>
+              <span role="cell">Texto parcial enquanto falas, sem substituir a transcricao final.</span>
+            </div>
+            <div class="model-row" role="row">
+              <span role="cell">Polish PT-PT</span>
+              <strong role="cell">gpt-5.5</strong>
+              <span role="cell">Corrige pontuacao, termos e estilo sem inventar conteudo.</span>
+            </div>
+            <div class="model-row" role="row">
+              <span role="cell">Poupar custo</span>
+              <strong role="cell">mini variants</strong>
+              <span role="cell">Baixa custo quando a qualidade maxima nao e critica.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="keys" class="section key-section" aria-labelledby="keys-title">
+        <div class="section-inner key-grid">
+          <div>
+            <h2 id="keys-title">Bring your own key</h2>
+            <p>
+              O site serve apenas documentacao. A app macOS recebe a tua chave localmente,
+              guarda-a no Keychain e envia audio/texto diretamente para o fornecedor configurado.
+            </p>
+          </div>
+          <div class="key-facts" aria-label="Garantias BYOK">
+            <div>
+              <span>01</span>
+              <p>Nenhuma API key fica no Vercel.</p>
+            </div>
+            <div>
+              <span>02</span>
+              <p>Sem proxy backend por defeito.</p>
+            </div>
+            <div>
+              <span>03</span>
+              <p>Historico e correccoes ficam em `~/.voxflow/`.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section adapt-section" aria-labelledby="adapt-title">
+        <div class="section-inner split">
+          <div>
+            <h2 id="adapt-title">Adaptar ao teu vocabulario</h2>
+            <p>
+              Nomes de clientes, marcas, siglas e termos tecnicos devem ir para o vocabulario
+              personalizado. As correccoes guardadas alimentam os prompts seguintes.
+            </p>
+          </div>
+          <div class="checklist">
+            <p>Adicionar glossario antes de gravacoes importantes.</p>
+            <p>Guardar correccoes quando mudares uma palavra recorrente.</p>
+            <p>Usar gpt-4o-transcribe para capturas finais e realtime apenas para preview.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="section-inner footer-inner">
+        <span>VoxFlow para macOS</span>
+        <a href="https://github.com/bilalmachraa82/VoxFlow">Repositorio GitHub</a>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -73,14 +73,14 @@ struct OnboardingView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("Transcricao de voz local")
+            Text("Ditado PT-PT para macOS")
                 .font(.title3)
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 6) {
-                Label("100% gratis", systemImage: "gift.fill")
+                Label("OpenAI para maxima qualidade", systemImage: "sparkles")
                     .foregroundStyle(.green)
-                Label("100% privado", systemImage: "lock.shield.fill")
+                Label("Fallback local/offline", systemImage: "lock.shield.fill")
                     .foregroundStyle(.blue)
             }
             .font(.subheadline)
@@ -114,7 +114,7 @@ struct OnboardingView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("O VoxFlow precisa de acesso ao microfone para capturar a tua voz e transcrever localmente. O audio nunca sai do teu Mac.")
+            Text("O VoxFlow precisa de acesso ao microfone para capturar a tua voz. Se usares OpenAI, o audio e enviado para transcricao; em modo local fica no Mac.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -237,7 +237,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Label("Modelo nao encontrado — usa 'vox --setup' no terminal", systemImage: "exclamationmark.triangle")
+                Label("Modelo local nao encontrado — configura o motor em Definicoes", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
                     .font(.caption)
             }

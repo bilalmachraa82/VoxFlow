@@ -1,9 +1,10 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 import HotKey
 import UserNotifications
 
-/// Core engine — whisper-cli backend, PowerMode, History, Notifications.
+/// Core engine: native capture, OpenAI/local transcription, PowerMode, History, Notifications.
 @MainActor
 final class VoxEngine: ObservableObject {
 
@@ -16,38 +17,58 @@ final class VoxEngine: ObservableObject {
     @Published var lastResult = ""
     @Published var lastRaw = ""
     @Published var errorMsg = ""
+    @Published var livePreview = ""
+    @Published var fallbackNotice = ""
+    @Published var lastProviderUsed = ""
+    @Published var lastEstimatedCost = 0.0
     @Published var recordingSeconds = 0
     @Published var audioLevels: [Float] = Array(repeating: 0, count: 20)
 
     // MARK: - Sub-managers
     let historyStore = HistoryStore()
+    let correctionStore = CorrectionMemoryStore()
     let powerMode = PowerModeManager()
     let launchManager = LaunchManager()
 
     // MARK: - Settings
     @AppStorage("vox.lang") var lang = "auto"
-    @AppStorage("vox.model") var model = "small"
+    @AppStorage("vox.model") var model = "large-v3-turbo"
+    @AppStorage("vox.transcriptionProvider") var transcriptionProvider = "local"
+    @AppStorage("vox.openAITranscriptionModel") var openAITranscriptionModel = "gpt-4o-transcribe"
     @AppStorage("vox.mic") var micDevice = "auto"
     @AppStorage("vox.autoPaste") var autoPaste = true
     @AppStorage("vox.sounds") var sounds = true
     @AppStorage("vox.polishProvider") var polishProvider = "none"
-    @AppStorage("vox.polishKey") var polishKey = ""
     @AppStorage("vox.polishModel") var polishModel = "meta-llama/llama-3.1-8b-instruct:free"
+    @AppStorage("vox.openAIPolishModel") var openAIPolishModel = "gpt-5.5"
+    @AppStorage("vox.realtimePreview") var realtimePreview = true
     @AppStorage("vox.holdToTalk") var holdToTalk = false
     @AppStorage("vox.customVocab") var customVocab = ""
     @AppStorage("onboardingComplete") var onboardingComplete = false
 
+    @Published var openAITranscriptionKey: String {
+        didSet { secretStore.set(openAITranscriptionKey, for: .openAITranscriptionKey) }
+    }
+    @Published var polishKey: String {
+        didSet { secretStore.set(polishKey, for: .polishKey) }
+    }
+
     // MARK: - Internal
     private var hotKey: HotKey?
-    private var ffmpegProcess: Process?
+    private let audioRecorder = NativeAudioRecorder()
+    private var realtimeSession: RealtimeTranscriptionClient?
     private var recordingTimer: Timer?
-    private var levelTimer: Timer?
-    private let tempWav = "/tmp/voxflow-rec.wav"
-    private let whisperCli = "/opt/homebrew/Cellar/whisper-cpp/1.8.3/bin/whisper-cli"
+    private var tempAudioURL: URL?
+    private let whisperCli = "/opt/homebrew/bin/whisper-cli"
     private let modelDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         .appendingPathComponent("VoxFlow/Models")
+    private let secretStore: SecretStoring
 
-    init() {
+    init(secretStore: SecretStoring = KeychainSecretStore()) {
+        self.secretStore = secretStore
+        SecretMigration.migrateLegacyUserDefaults(store: secretStore)
+        self.openAITranscriptionKey = secretStore.string(for: .openAITranscriptionKey)
+        self.polishKey = secretStore.string(for: .polishKey)
         try? FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
         setupHotkey()
         requestNotificationPermission()
@@ -86,30 +107,37 @@ final class VoxEngine: ObservableObject {
         state = .recording
         recordingSeconds = 0
         errorMsg = ""
+        livePreview = ""
+        fallbackNotice = ""
+        lastProviderUsed = ""
+        lastEstimatedCost = 0
         audioLevels = Array(repeating: 0, count: 20)
         if sounds { NSSound(named: "Tink")?.play() }
 
-        let mic = detectMic()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg")
-        proc.arguments = ["-f", "avfoundation", "-i", ":\(mic)", "-t", "120",
-                          "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le", "-y", tempWav]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voxflow-\(UUID().uuidString).wav")
+        tempAudioURL = outputURL
+        configureRealtimePreviewIfNeeded()
+
+        audioRecorder.onLevel = { [weak self] level in
+            Task { @MainActor in self?.pushAudioLevel(level) }
+        }
+        audioRecorder.onRealtimePCM24kChunk = { [weak self] data in
+            Task { @MainActor in self?.realtimeSession?.sendPCM24kAudio(data) }
+        }
 
         do {
-            try proc.run()
-            ffmpegProcess = proc
+            try audioRecorder.start(
+                outputURL: outputURL,
+                inputDeviceUID: micDevice == "auto" ? nil : micDevice
+            )
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.recordingSeconds += 1 }
             }
-            // Simulate waveform levels
-            levelTimer = Timer.scheduledTimer(withTimeInterval: 0.07, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    self?.audioLevels = (0..<20).map { _ in Float.random(in: 0.05...0.85) }
-                }
-            }
         } catch {
+            audioRecorder.stop()
+            realtimeSession?.disconnect()
+            realtimeSession = nil
             state = .error
             errorMsg = "Erro ao gravar: \(error.localizedDescription)"
         }
@@ -119,83 +147,108 @@ final class VoxEngine: ObservableObject {
         guard state == .recording else { return }
         if sounds { NSSound(named: "Pop")?.play() }
         recordingTimer?.invalidate(); recordingTimer = nil
-        levelTimer?.invalidate(); levelTimer = nil
         audioLevels = Array(repeating: 0, count: 20)
-        ffmpegProcess?.terminate(); ffmpegProcess = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.transcribe() }
+        audioRecorder.stop()
+        realtimeSession?.commit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.transcribe() }
+    }
+
+    private func pushAudioLevel(_ level: Float) {
+        audioLevels.removeFirst()
+        audioLevels.append(max(0.04, level))
+    }
+
+    private func configureRealtimePreviewIfNeeded() {
+        guard transcriptionProvider == "openai",
+              realtimePreview,
+              !openAITranscriptionKey.isEmpty
+        else {
+            realtimeSession = nil
+            return
+        }
+
+        let effectiveLang = TranscriptionPromptBuilder.effectiveLanguage(for: lang)
+        let prompt = TranscriptionPromptBuilder.build(
+            language: lang,
+            customVocabulary: customVocab,
+            corrections: correctionStore.recentCorrections
+        )
+
+        let session = RealtimeTranscriptionClient(
+            apiKey: openAITranscriptionKey,
+            language: effectiveLang,
+            prompt: prompt,
+            onDelta: { [weak self] delta in
+                Task { @MainActor in self?.livePreview += delta }
+            },
+            onCompleted: { [weak self] transcript in
+                Task { @MainActor in self?.livePreview = transcript }
+            },
+            onError: { [weak self] message in
+                Task { @MainActor in
+                    if self?.fallbackNotice.isEmpty == true {
+                        self?.fallbackNotice = "Preview realtime indisponivel: \(message)"
+                    }
+                }
+            }
+        )
+        realtimeSession = session
+        session.connect()
     }
 
     // MARK: - Transcribe
     private func transcribe() {
         state = .transcribing
         let startTime = Date()
+        realtimeSession?.disconnect()
+        realtimeSession = nil
 
         let currentModel = model, currentLang = lang
+        let currentTranscriptionProvider = transcriptionProvider
+        let currentOpenAIKey = openAITranscriptionKey
+        let currentOpenAIModel = openAITranscriptionModel
+        let currentRealtimePreview = realtimePreview
         let currentPolishProvider = polishProvider, currentPolishKey = polishKey
+        let currentOpenAIPolishModel = openAIPolishModel
         let currentCustomVocab = customVocab
-        let modelDir = self.modelDir, whisperCli = self.whisperCli, tempWav = self.tempWav
+        let currentCorrections = correctionStore.recentCorrections
+        let modelDir = self.modelDir, whisperCli = self.whisperCli
+        guard let tempAudioURL else {
+            state = .error
+            errorMsg = "Audio nao encontrado"
+            return
+        }
+        let effectiveLang = TranscriptionPromptBuilder.effectiveLanguage(for: currentLang)
+        let transcriptionPrompt = TranscriptionPromptBuilder.build(
+            language: currentLang,
+            customVocabulary: currentCustomVocab,
+            corrections: currentCorrections
+        )
 
         // Get active app for PowerMode
-        let activeApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let activeAppName = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
         let _ = powerMode.refreshActiveApp()
         let polishPrompt = powerMode.promptForCurrentApp()
 
         Task.detached {
-            let modelPath = modelDir.appendingPathComponent("ggml-\(currentModel).bin").path
-            guard FileManager.default.fileExists(atPath: modelPath) else {
-                await MainActor.run { self.state = .error; self.errorMsg = "Modelo nao encontrado" }
-                return
-            }
-            guard FileManager.default.fileExists(atPath: tempWav) else {
+            guard FileManager.default.fileExists(atPath: tempAudioURL.path) else {
                 await MainActor.run { self.state = .error; self.errorMsg = "Audio nao encontrado" }
                 return
             }
 
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: whisperCli)
-
-            // Language strategy:
-            // - "auto" is bad for mixed PT+EN (picks one and ignores the other)
-            // - "pt" forces Portuguese but Whisper still transcribes English words correctly
-            //   when the initial prompt tells it to expect code-switching
-            // - This is the best approach for bilingual PT-PT + EN users
-            let effectiveLang = (currentLang == "auto") ? "pt" : currentLang
-
-            var args = ["-m", modelPath, "-f", tempWav, "-l", effectiveLang, "-t", "6", "--no-timestamps", "--no-prints"]
-
-            // Initial prompt: critical for mixed-language accuracy
-            var promptParts: [String] = []
-            if effectiveLang == "pt" {
-                promptParts = [
-                    "Transcrição em Português Europeu com termos em Inglês.",
-                    "O utilizador alterna entre Português e Inglês naturalmente.",
-                    "Preserva palavras em Inglês: deploy, meeting, feedback, sprint, feature, bug.",
-                    "Pontuação correcta com acentos: ã, õ, ç, é, ê, á, ó, ú."
-                ]
-            } else if effectiveLang == "en" {
-                promptParts = [
-                    "Transcription in English with proper punctuation and capitalization."
-                ]
-            }
-            if !currentCustomVocab.isEmpty {
-                promptParts.append("Vocabulário: \(currentCustomVocab)")
-            }
-            if !promptParts.isEmpty {
-                args += ["--prompt", promptParts.joined(separator: " ")]
-            }
-            proc.arguments = args
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = FileHandle.nullDevice
-
             do {
-                try proc.run()
-                proc.waitUntilExit()
-
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                var text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                text = text.components(separatedBy: "\n").filter { !$0.hasPrefix("[") }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                let outcome = try await Self.transcribeAudio(
+                    audioURL: tempAudioURL,
+                    provider: currentTranscriptionProvider,
+                    openAIKey: currentOpenAIKey,
+                    openAIModel: currentOpenAIModel,
+                    effectiveLang: effectiveLang,
+                    prompt: transcriptionPrompt,
+                    localModelName: currentModel,
+                    modelDir: modelDir,
+                    whisperCli: whisperCli
+                )
+                let text = outcome.text
 
                 guard !text.isEmpty else {
                     await MainActor.run { self.state = .error; self.errorMsg = "Nenhuma fala detectada"; if self.sounds { NSSound(named: "Basso")?.play() } }
@@ -206,7 +259,8 @@ final class VoxEngine: ObservableObject {
 
                 // Polish with PowerMode-aware prompt
                 var finalText = text
-                if currentPolishProvider != "none" && !currentPolishKey.isEmpty {
+                let hasPolishKey = !currentPolishKey.isEmpty || (currentPolishProvider == "openai" && !currentOpenAIKey.isEmpty)
+                if currentPolishProvider != "none" && hasPolishKey {
                     await MainActor.run { self.state = .polishing }
                     if let polished = await self.polish(text: text, customPrompt: polishPrompt) {
                         finalText = polished
@@ -214,30 +268,170 @@ final class VoxEngine: ObservableObject {
                 }
 
                 let duration = Int(Date().timeIntervalSince(startTime))
+                let resolvedText = finalText
+                let estimatedCost = Self.estimatedCost(
+                    duration: duration,
+                    transcriptionProvider: currentTranscriptionProvider,
+                    transcriptionModel: currentOpenAIModel,
+                    polishProvider: currentPolishProvider,
+                    polishModel: currentOpenAIPolishModel,
+                    realtimePreview: currentRealtimePreview
+                )
 
                 await MainActor.run {
-                    self.lastResult = finalText
+                    self.lastResult = resolvedText
+                    self.lastProviderUsed = outcome.providerUsed
+                    self.fallbackNotice = outcome.fallbackReason ?? self.fallbackNotice
+                    self.lastEstimatedCost = estimatedCost
                     self.pasteResult()
                     self.state = .done
                     if self.sounds { NSSound(named: "Glass")?.play() }
 
                     // Save to history
                     let entry = HistoryEntry(
-                        text: finalText, rawText: text,
+                        text: resolvedText, rawText: text,
                         language: currentLang, mode: self.powerMode.currentModeName(),
                         appName: activeAppName, durationSeconds: duration
                     )
                     self.historyStore.add(entry)
 
                     // Notification
-                    self.sendNotification(text: finalText)
+                    self.sendNotification(text: resolvedText)
                 }
 
-                try? FileManager.default.removeItem(atPath: tempWav)
+                try? FileManager.default.removeItem(at: tempAudioURL)
             } catch {
                 await MainActor.run { self.state = .error; self.errorMsg = "Erro: \(error.localizedDescription)" }
             }
         }
+    }
+
+    private struct TranscriptionOutcome {
+        let text: String
+        let providerUsed: String
+        let fallbackReason: String?
+    }
+
+    private nonisolated static func transcribeAudio(
+        audioURL: URL,
+        provider: String,
+        openAIKey: String,
+        openAIModel: String,
+        effectiveLang: String,
+        prompt: String,
+        localModelName: String,
+        modelDir: URL,
+        whisperCli: String
+    ) async throws -> TranscriptionOutcome {
+        var fallbackReason: String?
+        if provider == "openai", !openAIKey.isEmpty {
+            do {
+                let text = try await OpenAITranscriptionClient.transcribe(
+                    apiKey: openAIKey,
+                    audioURL: audioURL,
+                    model: openAIModel,
+                    language: effectiveLang,
+                    prompt: prompt
+                )
+                return TranscriptionOutcome(text: text, providerUsed: "OpenAI \(openAIModel)", fallbackReason: nil)
+            } catch {
+                fallbackReason = "OpenAI falhou; usei fallback local. \(error.localizedDescription)"
+                print("[VoxFlow] OpenAI STT falhou, fallback local: \(error.localizedDescription)")
+            }
+        } else if provider == "openai" {
+            fallbackReason = "OpenAI sem API key; usei fallback local."
+        }
+
+        let text = try transcribeWithWhisperCli(
+            tempWav: audioURL.path,
+            modelName: localModelName,
+            modelDir: modelDir,
+            whisperCli: whisperCli,
+            effectiveLang: effectiveLang,
+            prompt: prompt
+        )
+        return TranscriptionOutcome(text: text, providerUsed: "Local \(localModelName)", fallbackReason: fallbackReason)
+    }
+
+    private nonisolated static func transcribeWithWhisperCli(
+        tempWav: String,
+        modelName: String,
+        modelDir: URL,
+        whisperCli: String,
+        effectiveLang: String,
+        prompt: String
+    ) throws -> String {
+        guard FileManager.default.fileExists(atPath: whisperCli) else {
+            throw NSError(
+                domain: "VoxFlow",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "whisper-cli nao encontrado em \(whisperCli)"]
+            )
+        }
+        let modelPath = modelDir.appendingPathComponent("ggml-\(modelName).bin").path
+        guard FileManager.default.fileExists(atPath: modelPath) else {
+            throw NSError(
+                domain: "VoxFlow",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Modelo local nao encontrado: \(modelName)"]
+            )
+        }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: whisperCli)
+        proc.arguments = [
+            "-m", modelPath,
+            "-f", tempWav,
+            "-l", effectiveLang,
+            "-t", "6",
+            "--no-timestamps",
+            "--no-prints",
+            "--prompt", prompt
+        ]
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        proc.standardOutput = outputPipe
+        proc.standardError = errorPipe
+
+        try proc.run()
+        proc.waitUntilExit()
+
+        let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+        guard proc.terminationStatus == 0 else {
+            let message = String(data: errorOutput, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw NSError(
+                domain: "VoxFlow",
+                code: Int(proc.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: message ?? "whisper-cli falhou"]
+            )
+        }
+
+        return (String(data: output, encoding: .utf8) ?? "")
+            .components(separatedBy: "\n")
+            .filter { !$0.hasPrefix("[") }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func estimatedCost(
+        duration: Int,
+        transcriptionProvider: String,
+        transcriptionModel: String,
+        polishProvider: String,
+        polishModel: String,
+        realtimePreview: Bool
+    ) -> Double {
+        guard transcriptionProvider == "openai" else { return 0 }
+        return VoxCostEstimator.estimate(
+            durationSeconds: duration,
+            transcriptionModel: transcriptionModel,
+            polishModel: polishProvider == "openai" ? polishModel : nil,
+            includesRealtimePreview: realtimePreview
+        )
     }
 
     // MARK: - Paste
@@ -260,6 +454,16 @@ final class VoxEngine: ObservableObject {
         }
     }
 
+    func learnCorrection(correctedText: String) {
+        let corrected = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !corrected.isEmpty else { return }
+
+        correctionStore.learn(rawText: lastRaw, correctedText: corrected)
+        lastResult = corrected
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(corrected, forType: .string)
+    }
+
     // MARK: - Notifications
     private func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -280,68 +484,36 @@ final class VoxEngine: ObservableObject {
     // MARK: - Mic Detection
     func detectMic() -> String {
         if micDevice != "auto" { return micDevice }
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg")
-        proc.arguments = ["-f", "avfoundation", "-list_devices", "true", "-i", ""]
-        let pipe = Pipe()
-        proc.standardError = pipe; proc.standardOutput = FileHandle.nullDevice
-        try? proc.run(); proc.waitUntilExit()
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        var inAudio = false; var builtIn: String?; var firstReal: String?
-        let virtual = ["ZoomAudio", "Microsoft Teams", "Loopback", "BlackHole"]
-        for line in output.components(separatedBy: "\n") {
-            if line.contains("audio devices") { inAudio = true; continue }
-            guard inAudio, let match = line.range(of: #"\[(\d+)\]"#, options: .regularExpression) else { continue }
-            let idx = String(line[match]).replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
-            if virtual.contains(where: { line.contains($0) }) { continue }
-            if firstReal == nil { firstReal = idx }
-            if line.contains("Microfone") || line.contains("MacBook") || line.contains("Built-in") { builtIn = idx }
-            if line.lowercased().contains("yeti") || line.lowercased().contains("blue") || line.contains("USB") { return idx }
-        }
-        return builtIn ?? firstReal ?? "0"
+        return AudioDeviceManager.inputDevices().first(where: \.isDefault)?.id
+            ?? AudioDeviceManager.inputDevices().first?.id
+            ?? "auto"
     }
 
     func listMics() -> [(id: String, name: String, active: Bool)] {
-        let currentMic = detectMic()
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg")
-        proc.arguments = ["-f", "avfoundation", "-list_devices", "true", "-i", ""]
-        let pipe = Pipe()
-        proc.standardError = pipe; proc.standardOutput = FileHandle.nullDevice
-        try? proc.run(); proc.waitUntilExit()
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        var results: [(id: String, name: String, active: Bool)] = []
-        var inAudio = false
-        let virtual = ["ZoomAudio", "Microsoft Teams", "Loopback", "BlackHole"]
-        for line in output.components(separatedBy: "\n") {
-            if line.contains("audio devices") { inAudio = true; continue }
-            guard inAudio, let match = line.range(of: #"\[(\d+)\]"#, options: .regularExpression) else { continue }
-            let idx = String(line[match]).replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
-            if virtual.contains(where: { line.contains($0) }) { continue }
-            let name = line.components(separatedBy: "] ").last?.trimmingCharacters(in: .whitespaces) ?? "Unknown"
-            results.append((id: idx, name: name, active: idx == currentMic))
+        AudioDeviceManager.inputDevices().map { device in
+            let active = micDevice == "auto" ? device.isDefault : device.id == micDevice
+            return (id: device.id, name: device.name, active: active)
         }
-        return results
+    }
+
+    func activeMicName() -> String {
+        listMics().first(where: \.active)?.name ?? "Microfone"
     }
 
     // MARK: - Polish (PT-PT optimized prompt + selectable model)
     private func polish(text: String, customPrompt: String? = nil) async -> String? {
-        // PT-PT specific prompt — critical for quality
-        let basePrompt = customPrompt ?? """
-        Es um assistente de correcção de texto em Português Europeu (PT-PT, não brasileiro).
+        let fullPrompt = PolishPromptBuilder.build(text: text, customPrompt: customPrompt)
 
-        REGRAS OBRIGATÓRIAS:
-        1. Corrige pontuação e maiúsculas segundo normas PT-PT
-        2. Remove palavras de preenchimento: hum, uh, tipo, pronto, então, basicamente, ok, ya
-        3. Preserva TODOS os termos em inglês sem traduzir (ex: "deploy", "meeting", "feedback")
-        4. Usa ortografia PT-PT (facto, não fato; equipa, não time; telemóvel, não celular)
-        5. Mantém o sentido exacto — NÃO adicionar, inventar, ou reformular frases
-        6. Devolve APENAS o texto corrigido, sem explicações nem comentários
+        if polishProvider == "openai" {
+            let key = polishKey.isEmpty ? openAITranscriptionKey : polishKey
+            guard !key.isEmpty else { return nil }
+            return try? await OpenAIPolishClient.polish(
+                apiKey: key,
+                model: openAIPolishModel,
+                prompt: fullPrompt
+            )
+        }
 
-        Texto para corrigir:
-        """
-
-        let fullPrompt = "\(basePrompt)\n\(text)"
         let (url, body) = polishRequest(prompt: fullPrompt)
         guard let url = url else { return nil }
         var request = URLRequest(url: url)

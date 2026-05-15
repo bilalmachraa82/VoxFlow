@@ -3,6 +3,7 @@ import SwiftUI
 struct MainMenuView: View {
     @EnvironmentObject var engine: VoxEngine
     @Environment(\.openWindow) private var openWindow
+    @State private var correctionDraft = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -93,13 +94,22 @@ struct MainMenuView: View {
 
             Text("\(engine.recordingSeconds)s").font(.system(size: 32, weight: .bold, design: .rounded)).foregroundStyle(.red)
 
+            if !engine.livePreview.isEmpty {
+                Text(engine.livePreview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+            }
+
             Button { engine.toggle() } label: {
                 Label("Parar", systemImage: "stop.fill").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(.red).controlSize(.large)
 
             MicIndicatorView(
-                micName: engine.listMics().first(where: \.active)?.name ?? "Microfone",
+                micName: engine.activeMicName(),
                 isActive: true
             )
 
@@ -128,15 +138,53 @@ struct MainMenuView: View {
                 } label: { Image(systemName: "doc.on.doc") }
                 .buttonStyle(.borderless)
             }
-            ScrollView {
-                Text(engine.lastResult).font(.callout).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            TextEditor(text: $correctionDraft)
+                .font(.callout)
+                .frame(minHeight: 92, maxHeight: 130)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(.quaternary)
+                }
+                .onAppear {
+                    correctionDraft = engine.lastResult
+                }
+                .onChange(of: engine.lastResult) { _, newValue in
+                    correctionDraft = newValue
+                }
+
+            if correctionDraft.trimmingCharacters(in: .whitespacesAndNewlines) != engine.lastResult.trimmingCharacters(in: .whitespacesAndNewlines) {
+                Button {
+                    engine.learnCorrection(correctedText: correctionDraft)
+                } label: {
+                    Label("Guardar correcao", systemImage: "checkmark.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered)
             }
+
             if engine.autoPaste {
                 Label("Colado no cursor", systemImage: "checkmark.circle.fill")
                     .font(.caption).foregroundStyle(.green)
             }
-            Button { engine.state = .idle } label: {
+            if !engine.fallbackNotice.isEmpty {
+                Label(engine.fallbackNotice, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            if !engine.lastProviderUsed.isEmpty {
+                Label(engine.lastProviderUsed, systemImage: "cpu")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if engine.lastEstimatedCost > 0 {
+                Label("Estimativa API: \(VoxCostEstimator.formatUSD(engine.lastEstimatedCost))", systemImage: "dollarsign.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                correctionDraft = ""
+                engine.state = .idle
+            } label: {
                 Label("Nova gravacao", systemImage: "mic.fill").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).tint(.purple)

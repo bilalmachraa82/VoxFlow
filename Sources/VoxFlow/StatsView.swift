@@ -17,6 +17,19 @@ struct StatsView: View {
         let avg = Double(entries.reduce(0) { $0 + $1.durationSeconds }) / Double(entries.count)
         return String(format: "%.1fs", avg)
     }
+    private var totalDuration: Int {
+        entries.reduce(0) { $0 + $1.durationSeconds }
+    }
+    private var qualityApiEstimate: String {
+        VoxCostEstimator.formatUSD(
+            VoxCostEstimator.estimate(
+                durationSeconds: totalDuration,
+                transcriptionModel: "gpt-4o-transcribe",
+                polishModel: "gpt-5.5",
+                includesRealtimePreview: false
+            )
+        )
+    }
 
     var body: some View {
         ScrollView {
@@ -26,6 +39,7 @@ struct StatsView: View {
                     card("Palavras", "\(totalWords)", "text.word.spacing", .blue)
                     card("Tempo poupado", timeSaved, "clock.arrow.circlepath", .green)
                     card("Vel. media", avgSpeed, "bolt.fill", .orange)
+                    card("API max qualidade", qualityApiEstimate, "dollarsign.circle", .mint)
                 }
 
                 // 7-day chart
