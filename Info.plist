@@ -16,8 +16,6 @@
     <string>3.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
-    <key>LSUIElement</key>
-    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
