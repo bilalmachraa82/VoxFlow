@@ -21,10 +21,7 @@
   <body>
     <header class="global-nav" aria-label="Navegacao global">
       <a class="global-mark" href="#top" aria-label="VoxFlow">
-        <svg viewBox="0 0 28 28" aria-hidden="true">
-          <path d="M14 3.3c5.1 0 8.4 3.6 8.4 8.8v3.8c0 5.2-3.3 8.8-8.4 8.8s-8.4-3.6-8.4-8.8v-3.8c0-5.2 3.3-8.8 8.4-8.8Z" />
-          <path d="M10.4 12.4c0-2.1 1.4-3.8 3.6-3.8s3.6 1.7 3.6 3.8v3.2c0 2.1-1.4 3.8-3.6 3.8s-3.6-1.7-3.6-3.8v-3.2Z" />
-        </svg>
+        <span>V</span>
       </a>
       <nav class="global-links" aria-label="Seccoes">
         <a href="#usar">Usar</a>
@@ -56,30 +53,14 @@
         </div>
 
         <div class="product-stage" aria-label="Pre-visualizacao do VoxFlow">
-          <div class="mac-render">
-            <div class="mac-window">
-              <div class="window-bar">
-                <span></span>
-                <span></span>
-                <span></span>
-                <strong>VoxFlow</strong>
-              </div>
-              <div class="app-surface">
-                <div class="recording-state">
-                  <span class="record-dot"></span>
-                  <span>Option + Space</span>
-                  <span>PT-PT</span>
-                </div>
-                <p class="spoken">
-                  "Marca a reuniao com a Ana e corrige lead para oportunidade."
-                </p>
-                <p class="transcribed">
-                  Marca a reunião com a Ana e corrige "lead" para "oportunidade".
-                </p>
-              </div>
-            </div>
-            <div class="mac-base" aria-hidden="true"></div>
-          </div>
+          <img
+            class="product-shot"
+            src="/assets/voxflow-product.png"
+            width="1400"
+            height="640"
+            alt="Interface do VoxFlow a transcrever e corrigir ditado em Português de Portugal"
+            fetchpriority="high"
+          >
         </div>
       </section>
 
@@ -93,21 +74,27 @@
           </div>
         </div>
 
-        <div class="flow-render" aria-label="Fluxo principal">
-          <div>
-            <span>01</span>
-            <strong>Gravar</strong>
-            <p>Option + Space</p>
+        <div class="voice-stage" aria-label="Fluxo principal do VoxFlow">
+          <div class="voice-wave" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span>
           </div>
-          <div>
-            <span>02</span>
-            <strong>Transcrever</strong>
-            <p>gpt-4o-transcribe</p>
-          </div>
-          <div>
-            <span>03</span>
-            <strong>Polir</strong>
-            <p>gpt-5.5 em PT-PT</p>
+          <div class="flow-render">
+            <div>
+              <span>01</span>
+              <strong>Gravar</strong>
+              <p>Option + Space</p>
+            </div>
+            <div>
+              <span>02</span>
+              <strong>Transcrever</strong>
+              <p>gpt-4o-transcribe</p>
+            </div>
+            <div>
+              <span>03</span>
+              <strong>Polir</strong>
+              <p>gpt-5.5 em PT-PT</p>
+            </div>
           </div>
         </div>
       </section>
@@ -118,26 +105,26 @@
           <p>Sem conta central, sem proxy escondido. Cada utilizador usa a sua própria key.</p>
         </div>
 
-        <ol class="utility-grid">
+        <ol class="setup-board">
           <li>
             <span>01</span>
-            <h3>Compilar</h3>
-            <p>Clona o repo e executa <code>swift build</code>, ou usa o Run do Codex.</p>
+            <strong>Compilar</strong>
+            <p><code>swift build</code></p>
           </li>
           <li>
             <span>02</span>
-            <h3>Adicionar key</h3>
-            <p>Escolhe OpenAI nas definições e cola a tua API key. Fica no Keychain.</p>
+            <strong>Adicionar key</strong>
+            <p>OpenAI no Keychain</p>
           </li>
           <li>
             <span>03</span>
-            <h3>Ditar</h3>
-            <p>Prime Option + Space, fala em Português de Portugal e larga para finalizar.</p>
+            <strong>Ditar</strong>
+            <p>Option + Space</p>
           </li>
           <li>
             <span>04</span>
-            <h3>Ensinar</h3>
-            <p>Corrige o texto, guarda a correção e alimenta o vocabulário local.</p>
+            <strong>Ensinar</strong>
+            <p>Correções em ~/.voxflow/</p>
           </li>
         </ol>
       </section>
@@ -148,28 +135,28 @@
           <p>A melhor estratégia é separar preview, transcrição final e correção contextual.</p>
         </div>
 
-        <div class="model-grid" aria-label="Modelos recomendados">
-          <article>
-            <span>Transcrição final</span>
-            <h3>gpt-4o-transcribe</h3>
-            <p>Mais qualidade para áudio completo, glossário e nomes próprios.</p>
-          </article>
+        <div class="model-rhythm" aria-label="Modelos recomendados">
           <article>
             <span>Preview live</span>
-            <h3>gpt-realtime-whisper</h3>
-            <p>Texto parcial enquanto falas, sem substituir o resultado final.</p>
+            <strong>gpt-realtime-whisper</strong>
+            <p>Feedback enquanto falas.</p>
           </article>
           <article>
-            <span>Polish</span>
-            <h3>gpt-5.5</h3>
-            <p>Pontuação, estilo e correções aprendidas, sem inventar conteúdo.</p>
+            <span>Transcrição final</span>
+            <strong>gpt-4o-transcribe</strong>
+            <p>Resultado principal, com glossário PT-PT.</p>
+          </article>
+          <article>
+            <span>Polish contextual</span>
+            <strong>gpt-5.5</strong>
+            <p>Corrige pontuação e aplica a tua memória local.</p>
           </article>
         </div>
       </section>
 
       <section id="privacidade" class="product-tile tile-dark tile-dark-2" aria-labelledby="privacidade-title">
         <div class="tile-copy">
-          <h2 id="privacidade-title">Bring your own key.</h2>
+          <h2 id="privacidade-title">A tua key fica contigo.</h2>
           <p>O site é só documentação. A app fala diretamente com o fornecedor configurado e guarda segredos localmente.</p>
           <div class="cta-row">
             <a class="button-primary" href="https://voxflow.aitipro.com">Abrir landing</a>
