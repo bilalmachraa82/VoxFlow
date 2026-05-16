@@ -1,8 +1,10 @@
 import SwiftUI
+import AppKit
 import AVFoundation
 
 struct OnboardingView: View {
     @AppStorage("onboardingComplete") private var onboardingComplete = false
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var engine: VoxEngine
 
     @State private var currentStep = 0
@@ -171,9 +173,21 @@ struct OnboardingView: View {
             Spacer()
 
             if accessibilityGranted {
-                Label("Permissao concedida", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.headline)
+                VStack(spacing: 12) {
+                    Label("Permissao concedida", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.headline)
+
+                    Button {
+                        finishOnboarding()
+                    } label: {
+                        Text("Entrar no VoxFlow")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                    .controlSize(.large)
+                }
             } else {
                 Button {
                     requestAccessibilityPermission()
@@ -194,13 +208,14 @@ struct OnboardingView: View {
                 }
                 .buttonStyle(.borderless)
 
-                Button("Continuar sem auto-colar") {
-                    engine.autoPaste = false
-                    withAnimation { currentStep = 3 }
+                Button {
+                    finishOnboarding(autoPaste: false)
+                } label: {
+                    Text("Entrar sem auto-colar")
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-                .font(.caption)
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
         }
         .onAppear {
@@ -327,7 +342,7 @@ struct OnboardingView: View {
 
             if !testResult.isEmpty {
                 Button {
-                    onboardingComplete = true
+                    finishOnboarding()
                 } label: {
                     Text("Concluido!")
                         .frame(maxWidth: .infinity)
@@ -340,7 +355,7 @@ struct OnboardingView: View {
             // Skip option for users who want to complete later
             if testResult.isEmpty && !isTesting {
                 Button("Saltar teste") {
-                    onboardingComplete = true
+                    finishOnboarding()
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
@@ -387,6 +402,18 @@ struct OnboardingView: View {
     private func requestAccessibilityPermission() {
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
+    }
+
+    private func finishOnboarding(autoPaste: Bool? = nil) {
+        if let autoPaste {
+            engine.autoPaste = autoPaste
+        }
+        permissionTimer?.invalidate()
+        permissionTimer = nil
+        onboardingComplete = true
+        engine.onboardingComplete = true
+        dismiss()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func recheckAccessibility(advance: Bool) {
