@@ -5,6 +5,13 @@ struct VoxFlowApp: App {
     @StateObject private var engine = VoxEngine()
 
     var body: some Scene {
+        WindowGroup("VoxFlow") {
+            MainMenuView()
+                .environmentObject(engine)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+
         MenuBarExtra {
             MainMenuView()
                 .environmentObject(engine)
