@@ -188,10 +188,23 @@ struct OnboardingView: View {
                 Text("Activa o VoxFlow na lista que aparece")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+
+                Button("Ja activei, verificar novamente") {
+                    recheckAccessibility(advance: true)
+                }
+                .buttonStyle(.borderless)
+
+                Button("Continuar sem auto-colar") {
+                    engine.autoPaste = false
+                    withAnimation { currentStep = 3 }
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .font(.caption)
             }
         }
         .onAppear {
-            accessibilityGranted = AXIsProcessTrusted()
+            recheckAccessibility(advance: true)
             startAccessibilityPolling()
         }
         .onDisappear {
@@ -376,16 +389,20 @@ struct OnboardingView: View {
         AXIsProcessTrustedWithOptions(opts)
     }
 
+    private func recheckAccessibility(advance: Bool) {
+        accessibilityGranted = AXIsProcessTrusted()
+        if accessibilityGranted, advance {
+            permissionTimer?.invalidate()
+            permissionTimer = nil
+            withAnimation { currentStep = 3 }
+        }
+    }
+
     private func startAccessibilityPolling() {
         permissionTimer?.invalidate()
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             Task { @MainActor in
-                if AXIsProcessTrusted() {
-                    accessibilityGranted = true
-                    permissionTimer?.invalidate()
-                    permissionTimer = nil
-                    withAnimation { currentStep = 3 }
-                }
+                recheckAccessibility(advance: true)
             }
         }
     }

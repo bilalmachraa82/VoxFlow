@@ -441,7 +441,7 @@ final class VoxEngine: ObservableObject {
         pb.clearContents()
         pb.setString(lastResult, forType: .string)
 
-        if autoPaste {
+        if autoPaste, AXIsProcessTrusted() {
             let src = CGEventSource(stateID: .combinedSessionState)
             if let down = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: true),
                let up = CGEvent(keyboardEventSource: src, virtualKey: 0x09, keyDown: false) {
@@ -451,6 +451,8 @@ final class VoxEngine: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if let saved = saved { pb.clearContents(); pb.setString(saved, forType: .string) }
             }
+        } else if autoPaste {
+            fallbackNotice = "Sem permissao de acessibilidade: texto copiado para o clipboard."
         }
     }
 
